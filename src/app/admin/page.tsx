@@ -1,0 +1,418 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { LogIn } from 'lucide-react';
+import { useExercises } from '@/hooks/useExercises';
+import { useProfile } from '@/hooks/useProfile';
+import { useSettings } from '@/hooks/useSettings';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import {
+  Trash2,
+  Edit,
+  Plus,
+  User,
+  Save,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Settings,
+  RefreshCw,
+  LogOut
+} from 'lucide-react';
+import GlassWidget from '@/components/ui/GlassWidget';
+import Button from '@/components/ui/Button';
+import Modal from '@/components/ui/Modal';
+import ExerciseForm from '@/components/admin/ExerciseForm';
+import FileUploader from '@/components/admin/FileUploader';
+import SearchInput from '@/components/ui/SearchInput';
+import Input from '@/components/ui/Input';
+import { type Exercise } from '@/lib/db';
+import { useRouter } from 'next/navigation';
+
+
+export default function AdminPage() {
+  const [search, setSearch] = useState('');
+  const { exercises, addExercise, updateExercise, deleteExercise, bulkAddExercises, deleteAllExercises } = useExercises({ search });
+  const { profile, updateProfile } = useProfile();
+  const { settings, updateSettings } = useSettings();
+  const {
+    manualSync,
+    syncStatus,
+    lastSyncAt,
+    lastSyncedVersion,
+    lastSyncError,
+    isOnline,
+    signOut,
+    user
+  } = useSupabaseAuth();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [profileName, setProfileName] = useState('');
+  const [previousDataType, setPreviousDataType] = useState('routine_best');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [syncFeedback, setSyncFeedback] = useState('');
+  const [exercisesCollapsed, setExercisesCollapsed] = useState(true);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const formattedSyncAt = lastSyncAt ? new Date(lastSyncAt).toLocaleString() : 'Never synced';
+
+  useEffect(() => {
+    if (profile?.name) {
+      setProfileName(profile.name);
+    }
+  }, [profile?.name]);
+
+  useEffect(() => {
+    if (settings?.previousDataType) {
+      setPreviousDataType(settings.previousDataType);
+    }
+  }, [settings?.previousDataType]);
+
+  const handleUpdateProfile = async () => {
+    try {
+      await updateProfile({ name: profileName });
+      setSuccessMessage('Profile updated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      setSuccessMessage('Failed to update profile. Please try again.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    }
+  }
+  const router=useRouter();
+  const handleAuthAction = async () => {
+    if(user){
+      await signOut();
+    }else{
+      router.push('/auth');
+    }
+  }
+  const handleUpdatePreviousDataType = async () => {
+    try {
+      await updateSettings({ previousDataType: previousDataType as any });
+      setSuccessMessage('Previous data setting updated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Failed to update previous data setting:', error);
+      setSuccessMessage('Failed to update previous data setting. Please try again.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    }
+  };
+
+  const handleAdd = async (exercise: Omit<Exercise, 'id'>) => {
+    await addExercise(exercise);
+    setShowAddModal(false);
+  };
+
+  const handleUpdate = async (exercise: Omit<Exercise, 'id'>) => {
+    if (editingExercise?.id) {
+      await updateExercise(editingExercise.id, exercise);
+      setEditingExercise(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm('Are you sure you want to delete this exercise?')) {
+      await deleteExercise(id);
+    }
+  };
+
+  const handleBulkUpload = async (exercises: Omit<Exercise, 'id'>[]) => {
+    await bulkAddExercises(exercises);
+  };
+
+  const handleDeleteAllExercises = async () => {
+    if (confirm(`Are you sure you want to delete ALL ${exercises?.length || 0} exercises? This action cannot be undone and will also remove them from all routines.`)) {
+      await deleteAllExercises();
+      setShowDeleteAllConfirm(false);
+      setSuccessMessage('All exercises deleted successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    }
+  };
+
+  const handleManualSync = async () => {
+    setSyncFeedback('Syncing data...');
+    const result = await manualSync();
+    setSyncFeedback(result.message);
+    setTimeout(() => setSyncFeedback(''), 5000);
+  };
+
+  const handleSignOut = async () => {
+    if (!user) {
+      setSyncFeedback('No user session active.');
+      setTimeout(() => setSyncFeedback(''), 5000);
+      return;
+    }
+
+    await signOut();
+    setSyncFeedback('Signed out. IndexedDB data remains.');
+    setTimeout(() => setSyncFeedback(''), 5000);
+  };
+
+  return (
+    <div className="space-y-4 md:space-y-6 max-w-7xl mx-auto">
+      <div className="px-2 md:px-0">
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Admin Panel</h1>
+        <p className="text-sm md:text-base text-white/60">Manage exercises and your profile settings</p>
+      </div>
+
+      <GlassWidget className="p-4 md:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <RefreshCw size={20} className="text-white/70" />
+          <h2 className="text-lg md:text-xl font-bold text-white">Data sync status</h2>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1 text-sm text-white/80">
+            <p className="text-xs uppercase tracking-[0.3em] text-white/50">Last sync</p>
+            <p className="text-base font-semibold text-white">{formattedSyncAt}</p>
+            
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-row gap-2 sm:flex-row">
+              <Button
+                onClick={handleManualSync}
+                disabled={syncStatus === 'syncing'}
+                className="w-1/2 sm:flex-1 justify-center"
+              >
+                <RefreshCw size={18} />
+                <span className="ml-2">{syncStatus === 'syncing' ? 'Syncing…' : 'Manual sync'}</span>
+              </Button>
+              <Button
+  variant="secondary"
+  onClick={handleAuthAction}
+  className="w-1/2 sm:flex-1 justify-center"
+>
+  {user ? <LogOut size={18} /> : <LogIn size={18} />}
+  <span className="ml-2">{user ? 'Sign out' : 'Sign in'}</span>
+</Button>
+            </div>
+            <p className="text-xs text-white/60">
+              Status: {syncStatus} {syncStatus === 'syncing' && '(working)'}
+            </p>
+            {syncFeedback && <p className="text-xs text-white/70">{syncFeedback}</p>}
+            {lastSyncError && <p className="text-xs text-red-400">Error: {lastSyncError}</p>}
+            <p className="text-xs text-white/50">
+              {isOnline ? 'Online – syncs happen automatically' : 'Offline – sync attempts queued'}
+            </p>
+          </div>
+        </div>
+      </GlassWidget>
+
+      {/* Profile Settings */}
+      <GlassWidget className="p-4 md:p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <User size={20} className="text-white" />
+          <h2 className="text-lg md:text-xl font-bold text-white">Profile Settings</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-sm font-medium text-white/80 mb-2">
+              Your Name
+            </label>
+            <Input
+              type="text"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              placeholder="Enter your name"
+            />
+          </div>
+          <div>
+            <Button onClick={handleUpdateProfile} className="w-full">
+              <Save size={18} />
+              Save Profile
+            </Button>
+          </div>
+          <div className="text-sm text-white/60">
+            This name will be displayed in the dashboard greeting.
+          </div>
+        </div>
+      </GlassWidget>
+
+      {/* App Settings */}
+      <GlassWidget className="p-4 md:p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Settings size={20} className="text-white" />
+          <h2 className="text-lg md:text-xl font-bold text-white">App Settings</h2>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-white/80 mb-2">
+              Previous Data Display
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+              <select
+                value={previousDataType}
+                onChange={(e) => setPreviousDataType(e.target.value)}
+                className="px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="routine_last" className="bg-gray-800 text-white">Previous record of that exercise in that routine</option>
+                <option value="routine_best" className="bg-gray-800 text-white">Previous best record of that exercise in that routine</option>
+                <option value="exercise_last" className="bg-gray-800 text-white">Previous record of that exercise</option>
+                <option value="exercise_best" className="bg-gray-800 text-white">Previous best record of that exercise</option>
+              </select>
+              <Button onClick={handleUpdatePreviousDataType} className="w-full md:w-auto">
+                <Save size={18} />
+                Save Setting
+              </Button>
+            </div>
+            <p className="text-xs text-white/60 mt-2">
+              Choose what data to show as "previous" in workout exercises. Default: Previous best record of that exercise in that routine.
+            </p>
+          </div>
+        </div>
+      </GlassWidget>
+
+      {successMessage && (
+        <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm text-center">
+          {successMessage}
+        </div>
+      )}
+
+      {/* Exercise Management */}
+      <GlassWidget className="p-4 md:p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <button
+            onClick={() => setExercisesCollapsed(!exercisesCollapsed)}
+            className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+          >
+            {exercisesCollapsed ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
+            <h2 className="text-xl md:text-2xl font-bold text-white">Exercise Management</h2>
+          </button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button
+              onClick={() => setShowDeleteAllConfirm(true)}
+              variant="danger"
+              className="w-full sm:w-auto text-sm md:text-base py-2 md:py-3"
+            >
+              <Trash2 size={18} />
+              Delete All
+            </Button>
+            <Button onClick={() => setShowAddModal(true)} className="w-full sm:w-auto text-sm md:text-base py-2 md:py-3">
+              <Plus size={18} />
+              Add Exercise
+            </Button>
+          </div>
+        </div>
+
+        {!exercisesCollapsed && (
+          <>
+            <div className="mt-6">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search exercises..."
+              />
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {exercises && exercises.length === 0 && (
+                <p className="text-center text-white/40 py-8">
+                  No exercises found. Add your first exercise!
+                </p>
+              )}
+
+              {exercises?.map((exercise) => (
+                <div
+                  key={exercise.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-white/5 hover:bg-white/8 transition-colors"
+                >
+                  <div>
+                    <h3 className="text-white font-medium">{exercise.name}</h3>
+                    <p className="text-sm text-white/60">
+                      {exercise.muscleGroup}
+                      {exercise.equipment && ` • ${exercise.equipment}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingExercise(exercise)}
+                      className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exercise.id!)}
+                      className="p-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6">
+              <FileUploader onUpload={handleBulkUpload} />
+            </div>
+          </>
+        )}
+      </GlassWidget>
+
+
+      <Modal
+        isOpen={showDeleteAllConfirm}
+        onClose={() => setShowDeleteAllConfirm(false)}
+        title="Delete All Exercises"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 text-yellow-400">
+            <AlertTriangle size={24} />
+            <div>
+              <h3 className="font-semibold">Warning: This action cannot be undone!</h3>
+              <p className="text-sm text-white/80">
+                This will permanently delete all {exercises?.length || 0} exercises and remove them from all routines.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              onClick={() => setShowDeleteAllConfirm(false)}
+              variant="secondary"
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeleteAllExercises}
+              variant="danger"
+              className="flex-1"
+            >
+              <Trash2 size={18} />
+              Delete All
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add Exercise"
+      >
+        <ExerciseForm onSubmit={handleAdd} onCancel={() => setShowAddModal(false)} />
+      </Modal>
+
+      <Modal
+        isOpen={editingExercise !== null}
+        onClose={() => setEditingExercise(null)}
+        title="Edit Exercise"
+      >
+        {editingExercise && (
+          <ExerciseForm
+            exercise={editingExercise}
+            onSubmit={handleUpdate}
+            onCancel={() => setEditingExercise(null)}
+          />
+        )}
+      </Modal>
+
+      {/* Invisible spacer to push content above BottomNav overlay */}
+      <div className="h-20 md:hidden" aria-hidden="true" />
+    </div>
+  );
+}
+
